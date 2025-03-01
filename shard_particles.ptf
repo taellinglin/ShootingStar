@@ -1,0 +1,22 @@
+# Particle Effect Configuration File
+
+# Basic properties of particles
+<ParticleSystem>
+    <Renderer>
+        <PointSprite>
+            <Texture>shard_texture.png</Texture>
+        </PointSprite>
+    </Renderer>
+
+    <Emitter>
+        <PointEmitter>
+            <Direction>0 0 1</Direction>
+            <Velocity>0.5</Velocity>
+            <StartSize>0.05</StartSize>
+            <EndSize>0.2</EndSize>
+            <LifeSpan>1</LifeSpan>
+            <StartColor>1 1 1 1</StartColor>
+            <EndColor>0 0 0 0</EndColor>
+        </PointEmitter>
+    </Emitter>
+</ParticleSystem>
