@@ -46,7 +46,6 @@ class ModelLoader:
         self.player.reparentTo(self.player_node_path)
         self.player_node_path.setScale(0.5)
 
-
         # Load gun and attach it
         self.gun_mount = self.player.find("**/gun_mount")
         self.gun = self.loader.loadModel("models/gun.bam")
@@ -73,6 +72,18 @@ class ModelLoader:
             print("Laser attached successfully.")
         else:
             print("Warning: 'fire_dir' not found in gun model!")
+
+        # Find **/cat node and replace it with models/cat.bam
+        cat_node = self.town.find("**/cat")
+        if not cat_node.isEmpty():
+            # Load the new cat model
+            cat_model = self.loader.loadModel("models/cat.bam")
+            cat_model.reparentTo(cat_node)
+            cat_model.setPos(0, 0, 0)  # Adjust the position as needed
+            print("Cat model replaced successfully.")
+        else:
+            print("Warning: 'cat' node not found in town model!")
+
 
     def update_gun_position(self, task):
         offset = (0.3, 1.4, -0.3)

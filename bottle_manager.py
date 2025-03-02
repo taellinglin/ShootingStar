@@ -1,13 +1,15 @@
 import os
 import random
-from panda3d.core import Vec4, BitMask32
+from panda3d.core import Vec4, BitMask32, LVecBase4f, LVector3, PointLight, Material
 from panda3d.bullet import BulletRigidBodyNode, BulletConvexHullShape
+from panda3d.bullet import BulletRigidBodyNode, BulletConvexHullShape, BulletBoxShape
 
 class BottleManager:
-    def __init__(self, loader, render, bullet_world):
+    def __init__(self, loader, render, bullet_world, scene_scale=1.0):
         self.loader = loader
         self.render = render
         self.bullet_world = bullet_world  # Bullet world to add the collision
+        self.scene_scale = scene_scale    # Factor to scale offsets, intensity, and radius
         self.bottle_path = "models/bottles/"
         
         # Load all available bottle model filenames from the directory
@@ -30,7 +32,7 @@ class BottleManager:
 
     def add_collision_to_bottle(self, bottle, node):
         """
-        Adds a collision shape to the bottle model.
+        Adds a collision shape to the bottle model and applies Bullet physics to make it fall.
         """
         # Get all geometries from the bottle model node
         geometries = self.get_geometries_from_nodepath(bottle)
@@ -40,30 +42,35 @@ class BottleManager:
             print("No geometries found in bottle!")
             return
 
-        # Create a BulletConvexHullShape for the bottle
+        # Create a BulletConvexHullShape for the bottle to handle the collision
         bottle_shape = BulletConvexHullShape()
         
         # Loop through all geometries and add them to the Bullet shape
         for geom in geometries:
             bottle_shape.addGeom(geom)
 
-        # Create a BulletRigidBodyNode for the bottle
+        # Create a BulletRigidBodyNode for the bottle, enabling physics
         bottle_rigid_body = BulletRigidBodyNode("Bottle")
         bottle_rigid_body.addShape(bottle_shape)
-        bottle_rigid_body.setIntoCollideMask(BitMask32.bit(1))  # Similarly for the bottle
+        
+        # Set the bottle as a dynamic object (it can move with physics)
+        bottle_rigid_body.setMass(1.0)  # You can adjust mass for realism
+        bottle_rigid_body.setIntoCollideMask(BitMask32.bit(1))  # Set collision mask for the bottle
 
-        # Attach the BulletRigidBodyNode to the bottle
+        # Attach the BulletRigidBodyNode to the bottle model
         bottle_collision_node = bottle.attachNewNode(bottle_rigid_body)
         
-        # Set position and orientation of the collision node to match the bottle's position and orientation
+        # Set position and orientation of the collision node to match the bottle's
         bottle_collision_node.setPos(bottle.getPos())
         bottle_collision_node.setHpr(bottle.getHpr())
         
-        # Attach the collision node to the render node (this does not need an additional call to attachNewNode)
+        # Attach the collision node to the render node
         bottle_collision_node.reparentTo(self.render)
-        print(f"Added collision shape to bottle {bottle.getName()}")
-
-
+        
+        # Add the rigid body node to the Bullet world for physics simulation
+        self.bullet_world.attachRigidBody(bottle_rigid_body)
+        
+        print(f"Added collision shape to bottle {bottle.getName()} and enabled physics.")
 
     def get_geometries_from_nodepath(self, node_path):
         """
@@ -87,11 +94,12 @@ class BottleManager:
                 print(f"Found Geom with {geom.getPrimitive(0).getNumVertices()} vertices.")
 
         return geometries
+
     def place_bottles_in_model(self, model):
         """
         Find all bottle mount nodes in the given model and place a randomly tinted bottle at each mount.
+        Each bottle gets a unique ROYGBIV tint, and is illuminated with a PointLight in the same color.
         """
-        # Find nodes whose names start with "bottle" (or "bottle.xx")
         bottle_nodes = model.findAllMatches("**/bottle*")
         if bottle_nodes.isEmpty():
             print(f"No bottle mount nodes found in {model.getName()}!")
@@ -108,18 +116,56 @@ class BottleManager:
             bottle = self.loader.loadModel(model_path)
             bottle.reparentTo(self.render)
             
+            # Extract and reparent the existing point lights from the bottle (destructible)
+            destructible_node = bottle.find("**/destructible")
+            point_lights = destructible_node.findAllMatches("**/Point*")
+            for light in point_lights:
+                # Reparent existing point lights to bottle
+                light.reparentTo(bottle)
+                # Adjust position of light based on bottle position
+                light.setPos(node.getPos(self.render))
+                print(f"Reparented point light from {light.getName()} to bottle.")
+
             # Set position and orientation relative to the mount node using world coordinates
             bottle.setPos(node.getPos(self.render))
             bottle.setHpr(node.getHpr(self.render))
             
-            # Tint with a random ROYGBIV color
+            # Choose a random ROYGBIV color for this specific bottle instance
             color = random.choice(self.colors)
-            bottle.setColor(*color)
+            bottle.setColorScale(*color)
             
             print(f"Placed bottle '{random_bottle_file}' tinted {color} at {node.getPos(self.render)}")
             
-            # Add collision for the bottle
+            # Add collision for the bottle and enable physics
             self.add_collision_to_bottle(bottle, node)
+            
+            # Illuminate the bottle with a PointLight using the same color
+            self.illuminate_bottle(bottle, color)
+
+    def illuminate_bottle(self, bottle, color):
+        """
+        Creates a PointLight with the given ROYGBIV color and attaches it to the bottle.
+        The light is positioned above and in front of the bottle with offsets scaled for a large scene.
+        The attenuation is adjusted to increase the effective radius.
+        """
+        bottle_light = PointLight("bottle_light")
+        bottle_light.setColor(LVecBase4f(color[0], color[1], color[2], color[3]))
+        
+        # Adjust attenuation values for a large scene.
+        attenuation_constant = 1.0
+        attenuation_linear = 0.05 / self.scene_scale
+        attenuation_quadratic = 0.05 / (self.scene_scale * self.scene_scale)
+        bottle_light.setAttenuation((attenuation_constant, attenuation_linear, attenuation_quadratic))
+        
+        bottle_light_np = bottle.attachNewNode(bottle_light)
+        
+        # Scale the offset based on scene scale.
+        offset = LVector3(0, -3 * self.scene_scale, 3 * self.scene_scale)
+        bottle_light_np.setPos(offset)
+        
+        # Enable the light in the render scene
+        self.render.setLight(bottle_light_np)
+        print(f"Illuminated bottle {bottle.getName()} with light color {color} at offset {offset} and attenuation {(attenuation_constant, attenuation_linear, attenuation_quadratic)}")
 
     def place_bottles(self, town_model, furniture_models=None):
         """

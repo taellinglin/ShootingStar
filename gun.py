@@ -82,14 +82,16 @@ class Gun:
         def collision_callback(result):
             if result.hasHit():
                 hit_phys = result.getNode()
-                print(f"[DEBUG] Collision detected with {hit_phys.getName()}")
+                hit_transform = hit_phys.getTransform()
+                hit_position = hit_transform.getPos()
+
+                print(f"[DEBUG] Collision detected with {hit_phys.getName()} at {hit_position}")
+
                 if hit_phys and hit_phys.getName() == "bottle":
-                    # Break the bottle on hit, using BottleManager
-                    hit_transform = hit_phys.getTransform()
-                    hit_position = hit_transform.getPos()
-                    print(f"[DEBUG] Bottle hit at position {hit_position}")
-                    self.bottle_manager.break_bottle(hit_phys, hit_position)  # Call break_bottle in bottle_manager.py
+                    print(f"[DEBUG] Bottle should break now.")
+                    self.bottle_manager.break_bottle(hit_phys, hit_position)
                     self.break_sound.play()
+
 
         if pellet_np and not pellet_np.isEmpty():
             pellet_np.node().setPythonTag("collision_callback", collision_callback)
