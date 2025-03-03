@@ -19,6 +19,7 @@ from bgm import BGMPlayer
 from sfx import SFX
 from physics import BulletPhysics
 from player import PlayerPhysics
+from hud import HUD
 class Game(ShowBase):
     def __init__(self):
         super().__init__()
@@ -43,10 +44,11 @@ class Game(ShowBase):
         self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world, self, self.camera, self.physics)
         self.bgm_player = BGMPlayer("bgm.ogg")
         self.sfx = SFX(self)
+        self.hud = HUD(self, self.bottle_manager)
         self.player_physics = PlayerPhysics(self.model_loader.player, self.bullet_world)
 
         # Set up gun mechanics
-        self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics)
+        self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics, self.hud)
         # Set up player controls
         
         self.controls = Controls(self, self.gun, self.model_loader.player)
@@ -93,6 +95,41 @@ class Game(ShowBase):
 
         # Place bottles on the town model and on each furniture model
         self.bottle_manager.place_bottles(self.model_loader.town, furniture_objects)
+
+    def reset_scene(self):
+        """Reset the scene by clearing and reloading all dynamic objects."""
+        # Remove existing objects
+        self.furniture_manager.clear_furniture()
+        self.bottle_manager.clear_bottles()
+
+        # Reset physics world
+        self.bullet_world = BulletWorld()
+        self.bullet_world.setGravity(Point3(0, 0, -9.81))
+        self.physics = BulletPhysics(self.bullet_world, self.render)
+
+        # Reload models
+        self.model_loader.reload_models()
+
+        # Reset managers
+        self.furniture_manager = FurnitureManager(self.loader, self.render)
+        self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world, self, self.camera, self.physics)
+
+        # Reinitialize player physics
+        self.player_physics = PlayerPhysics(self.model_loader.player, self.bullet_world)
+        
+        # Reset HUD
+        self.hud.reset()
+        
+        # Reinitialize the gun
+        self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics, self.hud)
+        
+        # Reset controls
+        self.controls = Controls(self, self.gun, self.model_loader.player)
+        self.controls.setup_controls()
+        
+        # Reload scene
+        self.setup_scene()
+        print("Scene reset successfully!")
 
     def setup_lighting(self):
         """Set up a slow cycling ambient light."""

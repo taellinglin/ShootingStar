@@ -12,6 +12,25 @@ class ModelLoader:
         self.camera = camera
         self.fps_mode = fps_mode
         self.load_models()
+    def reload_models(self):
+        """ Reloads all models by first removing existing ones and then reloading them. """
+        # Remove previous models
+        if self.town:
+            self.town.removeNode()
+        if self.player:
+            self.player.removeNode()
+        if self.player_rigid_node:
+            self.bullet_world.removeRigidBody(self.player_rigid_node)
+        if self.town:
+            self.bullet_world.removeRigidBody(self.town)
+
+        # Clear references
+        self.town = None
+        self.player = None
+        self.player_rigid_node = None
+
+        # Re-run load_models
+        self.load_models()
 
     def load_models(self):
         # Load town model

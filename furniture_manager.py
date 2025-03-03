@@ -8,7 +8,7 @@ class FurnitureManager:
         self.render = render
         self.furniture_path = "models/furniture/"
         self.furniture_objects = []  # To store references to placed furniture models
-
+        self.destroyed = False
     def place_furniture(self, town_model):
         """
         Find unique furniture mount nodes in the town model and place a random furniture model
@@ -65,3 +65,13 @@ class FurnitureManager:
         Returns the list of placed furniture objects.
         """
         return self.furniture_objects
+
+    def clear_furniture(self):
+        """
+        Removes all placed furniture objects from the scene and clears the stored list.
+        """
+        for furniture in self.furniture_objects:
+            if furniture:
+                furniture.removeNode()  # Remove the model from the scene graph
+        self.furniture_objects.clear()  # Clear the list of stored objects
+        print("All furniture has been cleared from the scene.")

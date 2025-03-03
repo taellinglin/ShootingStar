@@ -1,16 +1,17 @@
 from panda3d.core import Vec3, NodePath, BitMask32, Point3
 from panda3d.bullet import BulletRigidBodyNode, BulletSphereShape, BulletWorld
-
 class Gun:
-    def __init__(self, game, bullet_physics, bottle_manager, physics):
+    def __init__(self, game, bullet_physics, bottle_manager, physics, hud):
         self.physics = physics
         self.game = game
+        self.hud = hud
         self.bullet_physics = bullet_physics  # Bullet physics system reference
         self.bottle_manager = bottle_manager  # Reference to BottleManager
         self.fire_dir = game.model_loader.fire_dir  # Get fire_dir from ModelLoader
         self.load_sounds()
         self.last_shot_time = 0
         self.cooldown_time = 0.2  # 200ms cooldown between shots
+        self.bottles_total = 0 # Track total unbroken bottles
 
     def load_sounds(self):
         """Load shooting and shell sounds."""
@@ -27,7 +28,7 @@ class Gun:
         if not self.fire_dir or self.fire_dir.isEmpty():
             print("[DEBUG] Error: fire_dir not found in gun model!")
             return None, None
-
+        self.hud.update_ammo(-1)
         # Create a Bullet physics body for the pellet
         pellet_rb = BulletRigidBodyNode("pellet")
         pellet_rb.setMass(3.0)
@@ -84,6 +85,9 @@ class Gun:
                     print(f"[DEBUG] Bottle should break now.")
                     self.physics.break_bottle(hit_phys)
                     self.break_sound.play()
+                    # Decrease the unbroken bottles count and update HUD
+                    self.bottles_total -= 1
+                    self.hud.update_bottles(self.bottles_total)
 
         if pellet_np and not pellet_np.isEmpty():
             pellet_np.node().setPythonTag("collision_callback", collision_callback)
@@ -114,23 +118,34 @@ class Gun:
                 # Get the collision point (Manifold Point)
                 hit_point = result.getHitPos()  # This gives the world position of the collision
                 print(f"[DEBUG] Bottle detected at {hit_point}")
+                self.hud.update_bottles()  # Ensure the HUD updates
                 self.physics.break_bottle(hit_node, hit_point)  # Pass the collision point to break_bottle
                 self.break_sound.play()
 
         # Iterate through all bottles and check for collisions
         for bottle in self.bottle_manager.get_all_bottles():
-            # You can adjust this to check for a direct collision with each bottle
-            bottle_pos = bottle.node.getPos(self.game.render)  # Assuming 'node' is the NodePath of the bottle
+            if not bottle.node or bottle.node.isEmpty():
+                return  # Skip this bottle if it's been removed
+
+            bottle_pos = bottle.node.getPos(self.game.render)
+
             distance = (start - bottle_pos).length()
-            
-            # Define a threshold for collision detection (can be adjusted)
-            if distance < 5:  # If the pellet is close enough to the bottle
+
+            if distance < 5 and not bottle.destroyed:  # Check that the bottle is not already destroyed
                 print(f"[DEBUG] Pellet detected collision with bottle at {bottle_pos}")
-                hit_point = bottle_pos  # If we're directly checking, use the bottle's position
+                hit_point = bottle_pos  # Use the bottle's position as the hit point
                 self.physics.break_bottle(bottle, hit_point)  # Pass the hit point to break_bottle
                 self.game.sfx.load_sound("bottle_break", "break.wav")
                 self.game.sfx.play_sound("bottle_break", position=Point3(bottle_pos), volume=1.0)
+                
+                # Mark the bottle as destroyed and update the count
+                bottle.destroyed = True # Decrease the unbroken bottle count
+                self.hud.update_bottles()  # Update the HUD
 
+                # Remove the bottle's node from the scene graph
+                bottle.cleanup()
+                bottle.node.removeNode()
+                print(f"[DEBUG] Bottle at {bottle_pos} has been removed from the scene graph.")
 
         # Cleanup: Remove pellets if they travel too far
         if start.length() > 200:  # Arbitrary distance limit
@@ -140,6 +155,7 @@ class Gun:
             return task.done
 
         return task.cont  # Continue checking for collisions
+
     def get_gun(self):
-            """Returns the current Gun instance."""
-            return self
+        """Returns the current Gun instance."""
+        return self

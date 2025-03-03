@@ -33,7 +33,10 @@ class BottleManager:
         """Return a list of all bottle nodes."""
         return self.bottles
     def remove_bottle(self, bottle):
+        if not bottle.destroyed:
+            bottle.cleanup()
         self.bottles.remove(bottle)
+
         
     def add_collision_to_bottle(self, bottle):
         """Add collision to a bottle."""
@@ -42,6 +45,7 @@ class BottleManager:
     def place_bottles_in_model(self, model):
         """Place bottles in the model."""
         bottle_nodes = model.findAllMatches("**/bottle*")
+        
         if bottle_nodes.isEmpty() or not self.bottle_files:
             print(f"No bottle mount nodes found in {model.getName()} or no bottles available!")
             return
@@ -56,6 +60,7 @@ class BottleManager:
             bottle = Bottle(bottle_model, self.bullet_world, self.game, self, self.scene_scale)
             self.add_bottle(bottle)
             self.illuminate_bottle(bottle_model)
+            self.game.hud.update_bottles_total(1)
     
     def illuminate_bottle(self, bottle):
         color = bottle.getColorScale()
@@ -72,12 +77,27 @@ class BottleManager:
         if furniture_models:
             for furniture in furniture_models:
                 self.place_bottles_in_model(furniture)
+                
     
     def update(self, task):
         """Update all bottles in the game."""
         for bottle in self.bottles:
             bottle.update(task)
         return task.cont  # Continue checking for updates
+    def get_total_bottles(self):
+        """Return the total number of bottles in the game."""
+        return len(self.bottles)
+    def clear_bottles(self):
+        """
+        Removes all placed furniture objects from the scene and clears the stored list.
+        """
+        for furniture in self.bottles:
+            if furniture:
+                furniture.cleanup()  # Remove the model from the scene graph
+                self.bottles.clear()  # Clear the list of stored objects
+                print("All furniture has been cleared from the scene.")
+        return len(self.bottles)
+
 
 class Bottle:
     def __init__(self, model, bullet_world, game, bottle_manager, scene_scale=1.0):
@@ -89,7 +109,7 @@ class Bottle:
         self.node = model  # The actual node for the bottle
         self.is_broken = False
         self.node.setName("Bottle")  # Ensure it's named for collision detection
-        
+        self.destroyed = False
         # Set up the collision detection for the bottle
         self.bottle_rb = BulletRigidBodyNode("Bottle")
         self.bottle_shape = BulletConvexHullShape()
@@ -101,9 +121,17 @@ class Bottle:
         self.bottle_manager.bullet_world.attachRigidBody(self.bottle_rb)
 
     def update(self, task):
-        """Continuously check for collisions with the pellet."""
-        if self.is_broken:
-            return task.cont  # No need to check collisions for broken bottles
+        if self.destroyed:
+            self.bottle_manager.remove_bottle(self)  # Ensure it's removed from active bottles
+            return task.done  # Stop updating this bottle
+
+        if self.node.isEmpty():
+            print("[ERROR] Bottle node is empty, skipping update")
+            return task.done
+        if not self.node.isEmpty():
+            self.bullet_world.attachRigidBody(self.bottle_rb)
+        else:
+            print("[ERROR] Bottle node is empty, skipping physics attachment")
 
         # Perform ray test for collision detection
         start = self.node.getPos(self.game.render)  # Get bottle's world position
@@ -120,6 +148,7 @@ class Bottle:
                 print(f"[DEBUG] Pellet collision detected with bottle at {hit_node.getPos(self.game.render)}")
                 self.bottle_manager.physics.break_bottle(self.node)  # Call break bottle logic
                 self.is_broken = True  # Mark this bottle as broken
+                self.destroyed = True
 
         return task.cont  # Keep the update loop going
 
