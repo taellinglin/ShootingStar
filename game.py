@@ -40,7 +40,7 @@ class Game(ShowBase):
         # Initialize managers
         self.furniture_manager = FurnitureManager(self.loader, self.render)
         self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world, self, self.camera, self.physics)
-        self.bgm_player = BGMPlayer("bgm.ogg")
+        self.bgm_player = BGMPlayer("bgm.wav")
         self.sfx = SFX(self)
         # Set up player controls
         self.controls = Controls(self)
