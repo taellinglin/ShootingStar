@@ -41,3 +41,24 @@ class BGMPlayer:
         # Resume playing the background music if paused
         self.bgm_sound.play()
         print("Background music resumed.")
+    def replace_bgm(self, new_audio_file):
+        """Stops the current BGM and starts playing a new one."""
+        print("Replacing current BGM with new one.")
+        
+        # Stop the current background music
+        self.bgm_sound.stop()
+        
+        # Load and play the new background music
+        self.bgm_sound = base.loader.loadSfx(new_audio_file)
+        
+        if not self.bgm_sound:
+            print(f"Error: Unable to load {new_audio_file}")
+            return
+        
+        # Set the new background music to loop
+        self.bgm_sound.set_loop(True)
+        
+        # Set the volume to a reasonable level (you can adjust this)
+        self.bgm_sound.set_volume(0.5)
+        self.bgm_sound.play()
+        print(f"New background music ({new_audio_file}) is now playing.")

@@ -20,6 +20,7 @@ from sfx import SFX
 from physics import BulletPhysics
 from player import PlayerPhysics
 from hud import HUD
+
 class Game(ShowBase):
     def __init__(self):
         super().__init__()
@@ -36,6 +37,7 @@ class Game(ShowBase):
         self.bullet_world = BulletWorld()
         self.bullet_world.setGravity(Point3(0, 0, -9.81))
         self.physics = BulletPhysics(self.bullet_world, self.render)
+
         # Load models (town, player, gun)
         self.model_loader = ModelLoader(self.loader, self.render, self.bullet_world, self.camera, fps_mode=True)
 
@@ -49,10 +51,11 @@ class Game(ShowBase):
 
         # Set up gun mechanics
         self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics, self.hud)
+
         # Set up player controls
-        
         self.controls = Controls(self, self.gun, self.model_loader.player)
         self.controls.setup_controls()
+
         # Set up update task
         self.taskMgr.add(self.update, "update")
 
@@ -60,8 +63,19 @@ class Game(ShowBase):
         self.setup_scene()
         self.model_loader.remove_static_gun()
         self.model_loader.remove_static_laser()
+
         # Set up ambient lighting (slow ROYGBIV cycling)
         self.setup_lighting()
+        self.bgm_played = False
+        base.taskMgr.add(self.some_task, "someTask")
+
+    def some_task(self, task):
+        if self.hud.bottles_shot >= self.hud.bottles_total:
+            if not self.bgm_played:  # Check if the win music has been played already
+                # Change the BGM to "win.ogg"
+                self.bgm_player.replace_bgm("win.ogg")
+                self.bgm_played = True  # Set the flag to True so it doesn't play again
+        return task.cont    
 
     def set_fullscreen(self):
         # Use the pipe's display information to detect the native resolution.

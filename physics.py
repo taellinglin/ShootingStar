@@ -156,7 +156,7 @@ class BulletPhysics:
         """Handle bottle breaking into shards using Voronoi tessellation,
         cutting the bottle's mesh and parenting the mesh pieces to the physics shards.
         Shards are placed at the hit position."""
-        if(hit_phys.destroyed == False):
+        if not hasattr(hit_phys, 'destroyed') or hit_phys.destroyed == False or not hasattr(hit_phys, 'node'):
             print(f"Breaking bottle at position: {position}")
 
             # Extract the original mesh and texture from the hit_phys object
