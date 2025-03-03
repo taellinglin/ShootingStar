@@ -29,18 +29,18 @@ class ModelLoader:
         player_start = self.town.find("**/player_start")
         start_pos = player_start.getPos()
         print(f"Found Player Starting Point: {start_pos}")
-        player_start_pos = player_start.getPos() if not player_start.isEmpty() else Point3(0, 0, 0)
+        player_start_pos = player_start.getPos() if not player_start.isEmpty() else Point3(3.1330947, -137.16002, 6.6172513)
 
         # Load player model
         self.player = self.loader.loadModel("models/player.bam")
 
         # Create physics node for player
-        player_rigid_node = BulletRigidBodyNode("player")
+        self.player_rigid_node = BulletRigidBodyNode("player")
         player_shape = BulletSphereShape(1)
-        player_rigid_node.addShape(player_shape)
-        self.player_node_path = self.render.attachNewNode(player_rigid_node)
+        self.player_rigid_node.addShape(player_shape)
+        self.player_node_path = self.render.attachNewNode(self.player_rigid_node)
         self.player_node_path.setPos(player_start_pos)
-        self.bullet_world.attachRigidBody(player_rigid_node)
+        self.bullet_world.attachRigidBody(self.player_rigid_node)
 
         # Parent visual model to physics node
         self.player.reparentTo(self.player_node_path)

@@ -133,3 +133,4 @@ class Bottle:
         
         # Optionally delete the bottle object if no longer needed
         del self
+    

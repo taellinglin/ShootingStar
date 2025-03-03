@@ -9,7 +9,6 @@ class Gun:
         self.bottle_manager = bottle_manager  # Reference to BottleManager
         self.fire_dir = game.model_loader.fire_dir  # Get fire_dir from ModelLoader
         self.load_sounds()
-        self.setup_shooting()
         self.last_shot_time = 0
         self.cooldown_time = 0.2  # 200ms cooldown between shots
 
@@ -22,9 +21,6 @@ class Gun:
         self.break_sound = self.game.loader.loadSfx("break.wav")
         self.break_sound.setVolume(1)
 
-    def setup_shooting(self):
-        """Bind shooting action to the left mouse button."""
-        self.game.accept("mouse1", self.shoot)
 
     def create_pellet(self):
         """Creates a physics-enabled pellet and returns its NodePath and BulletRigidBodyNode."""
@@ -116,7 +112,7 @@ class Gun:
             # Check if the hit node is a bottle and process accordingly
             if hit_name == "Bottle":
                 # Get the collision point (Manifold Point)
-                hit_point = result.getHitPoint()  # This gives the world position of the collision
+                hit_point = result.getHitPos()  # This gives the world position of the collision
                 print(f"[DEBUG] Bottle detected at {hit_point}")
                 self.physics.break_bottle(hit_node, hit_point)  # Pass the collision point to break_bottle
                 self.break_sound.play()
@@ -144,3 +140,6 @@ class Gun:
             return task.done
 
         return task.cont  # Continue checking for collisions
+    def get_gun(self):
+            """Returns the current Gun instance."""
+            return self

@@ -10,6 +10,7 @@ from panda3d.core import GeomVertexWriter, GeomTristrips, GeomTriangles
 from panda3d.core import LMatrix3f  # For single precision
 from panda3d.core import LVecBase3f
 from shapely.geometry import Polygon, box
+import os
 
 class BulletPhysics:
     def __init__(self, bullet_world, render):
@@ -152,49 +153,59 @@ class BulletPhysics:
             return None
 
     def break_bottle(self, hit_phys, position):
-        """Handle bottle breaking into shards using Voronoi tessellation, with clipping of unbounded regions."""
+        """Handle bottle breaking into shards using Voronoi tessellation,
+        cutting the bottle's mesh and parenting the mesh pieces to the physics shards.
+        Shards are placed at the hit position."""
         print(f"Breaking bottle at position: {position}")
 
+        # Extract the original mesh and texture from the hit_phys object
+        original_mesh = hit_phys.node.findAllMatches('**/+GeomNode').getPath(0).node()
+        original_texture = hit_phys.node.getTexture()  # Returns a Texture object or None
+
+        if original_texture:
+            print("Texture found:", original_texture)
+        else:
+            print("No texture found. Loading default texture.")
+            default_texture_path = os.path.join("models", "bottles", "defaulttext.jpg")
+            original_texture = loader.loadTexture(default_texture_path)
+            if not original_texture:
+                print("Failed to load default texture.")
+
         # Generate a set of random points for Voronoi tessellation.
-        points = np.vstack(([0, 0, 0], np.random.uniform(-0.5, 0.5, (12, 3))))  # 13 points in total.
+        # Set the desired total number of points (shards)
+        num_points = 128
+        # Generate 64 points: one fixed at the origin plus 63 random ones.
+        points = np.vstack(([0, 0, 0], np.random.uniform(-1, 1, (num_points - 1, 3))))
+
+
         print(f"Generated Voronoi points: {points}")
 
-        # For clipping, define a bounding box in the XY plane.
-        # Adjust these values to match your bottle's bounds.
-        clip_bbox = box(-1, -1, 1, 1)  # xmin, ymin, xmax, ymax
-
-        # Perform Voronoi tessellation.
+        # Define a bounding box in the XY plane (adjust as needed for your bottle's bounds).
+        clip_bbox = box(-1, -1, 1, 1)
         vor = Voronoi(points)
         print(f"Voronoi regions: {len(vor.regions)} regions generated.")
 
-        # Iterate through the Voronoi regions.
         for i, region in enumerate(vor.regions):
             print(f"Processing region {i}: {region}")
-
-            # Skip regions that are empty
             if not region:
                 print(f"Skipping region {i} (empty region).")
                 continue
 
             # Prepare to collect 2D points (only XY) from the region.
             region_pts_2d = []
-            # Check for unbounded region: if -1 is present, we need to clip.
             if -1 in region:
                 print(f"Region {i} is unbounded; attempting to clip.")
-                # Build the list of points using the finite indices.
                 for idx in region:
                     if idx == -1 or idx >= len(points):
                         continue
                     region_pts_2d.append((points[idx][0], points[idx][1]))
-
                 clipped_coords = self.clip_voronoi_region(region_pts_2d, clip_bbox)
                 if clipped_coords is None:
                     print(f"Skipping region {i} after clipping returned no valid polygon.")
                     continue
-                # Use the clipped polygon's vertices (convert back to 3D by adding Z = 0, or use a default Z value)
+                # Convert the clipped polygon's vertices back to 3D (using Z = 0)
                 final_region = [(x, y, 0.0) for (x, y) in clipped_coords]
             else:
-                # For bounded regions, just use the points from the region.
                 final_region = []
                 for idx in region:
                     if 0 <= idx < len(points):
@@ -205,44 +216,43 @@ class BulletPhysics:
 
             print(f"Region {i} will use {len(final_region)} vertices after processing.")
 
-            # Create GeomVertexData with the vertex format V3.
+            # Create GeomVertexData for the shard's geometry.
             vertex_data = GeomVertexData("shard", GeomVertexFormat.getV3(), Geom.UHStatic)
             vertex_writer = GeomVertexWriter(vertex_data, "vertex")
-
-            # Write each vertex from final_region
             for pt in final_region:
                 vertex_writer.addData3f(*pt)
-
             if vertex_data.getNumRows() == 0:
                 print(f"Skipping region {i} because no vertices were written after clipping.")
                 continue
 
-            # Create GeomTriangles (using sequential indices)
+            # Create GeomTriangles (using sequential indices).
             geom_triangles = GeomTriangles(Geom.UHStatic)
             num_vertices = vertex_data.getNumRows()
             print(f"Region {i} has {num_vertices} vertices.")
             for j in range(0, num_vertices - 2, 3):
                 geom_triangles.addVertices(j, j + 1, j + 2)
-
             if geom_triangles.getNumVertices() < 3:
                 print(f"Skipping region {i} due to invalid triangle data (less than 3 vertices).")
                 continue
 
+            # Assemble the geometry.
             geom = Geom(vertex_data)
             geom.addPrimitive(geom_triangles)
-
             if geom.getVertexData() is None or geom.getNumPrimitives() == 0 or geom.isEmpty():
                 print(f"Skipping region {i} due to invalid geometry.")
                 continue
 
+            # Create a visual GeomNode for the shard and set its texture.
+            geom_node = GeomNode(f"shard_geom_{i}")
+            geom_node.addGeom(geom)
+            geom_node_path = base.render.attachNewNode(geom_node)
+            geom_node_path.setTexture(original_texture)
+
+            # Create a BulletConvexHullShape and add the shard geometry for collision.
             shape = BulletConvexHullShape()
             shape.addGeom(geom)
-            print(f"Region {i} shape created with {vertex_data.getNumRows()} vertices.")
-
             piece_phys = BulletRigidBodyNode(f"piece_{i}")
             piece_phys.addShape(shape)
-            print(f"Rigid body created for piece {i}.")
-
             piece_phys.setMass(0.1)
             piece_phys.setInertia(LVecBase3f(0.0, 0.0, 0.0))
             piece_phys.setDeactivationEnabled(False)
@@ -253,15 +263,24 @@ class BulletPhysics:
             piece_phys.setRestitution(0.5)
             piece_phys.setLinearFactor(Vec3(1, 1, 1))
             piece_phys.setAngularFactor(Vec3(1, 1, 1))
-
-            print(f"Physics properties set for piece {i}.")
-
             impulse = Vec3(*np.random.uniform(-10, 10, 3))
             print(f"Applying central impulse to piece {i}: {impulse}")
             piece_phys.applyCentralImpulse(impulse)
 
+            # Create the physics node and set its position at the hit point.
             phys_node = base.render.attachNewNode(piece_phys)
-            print(f"Piece {i} attached to the scene.")
+            phys_node.setName(f"piece_{i}")
+            # Optionally, add a slight random offset so shards don't overlap exactly.
+            offset = Vec3(*np.random.uniform(-0.1, 0.1, 3))
+            phys_node.setPos(position + offset)
+
+            # Parent the visual shard to the physics node so it moves with it.
+            geom_node_path.reparentTo(phys_node)
+
+            print(f"Piece {i} attached to the scene at position: {phys_node.getPos()}")
             self.bullet_world.attachRigidBody(piece_phys)
             print(f"Piece {i} added to the Bullet physics world.")
-            hit_phys.cleanup()
+
+        # Remove the original bottle's mesh from the scene.
+        print("Removing original hit_phys object.")
+        hit_phys.cleanup()
