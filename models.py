@@ -56,6 +56,8 @@ class ModelLoader:
                 self.gun.setPos(0.3, 1.4, -0.3)  # Adjust gun's position relative to the camera
                 print("Gun mounted to camera for FPS mode.")
                 taskMgr.add(self.update_gun_position, "update_gun_position")  # Ensure it's updated
+                # Remove the other gun model (if it is parented to player)
+                self.remove_static_gun()
             else:
                 print("Warning: 'gun_mount' not found in player model!")
         else:
@@ -75,6 +77,8 @@ class ModelLoader:
             self.laser.setPos(0, 0, 0)
             self.laser.setScale(0.1)
             print("Laser attached successfully.")
+            # Remove the static laser (if it is not parented to the camera)
+            self.remove_static_laser()
         else:
             print("Warning: 'fire_dir' not found in gun model!")
 
@@ -96,8 +100,20 @@ class ModelLoader:
             self.gun.setPos(self.camera, *offset)  # Set position relative to camera
         return task.cont
 
-    
-    
+    def remove_static_gun(self):
+        """Remove the gun that is not moving with the camera"""
+        static_gun = self.player.find("**/gun")  # Find the other gun (non-camera mounted)
+        if static_gun:
+            static_gun.removeNode()  # Remove the node if it's not the camera-attached gun
+            print("Removed static gun.")
+
+    def remove_static_laser(self):
+        """Remove the laser that is not moving with the camera"""
+        static_laser = self.gun.find("**/laser")  # Find the other laser (non-camera mounted)
+        if static_laser:
+            static_laser.removeNode()  # Remove the node if it's not the camera-attached laser
+            print("Removed static laser.")
+
     def get_geometries(self, model):
         """ Extracts all GeomNodes from a given model. """
         geometries = []
@@ -106,6 +122,7 @@ class ModelLoader:
             for i in range(geom_node.getNumGeoms()):
                 geometries.append(geom_node.getGeom(i))
         return geometries
+
     def load_single_model(self, model_path):
         """Load a single model given the path."""
         return self.loader.loadModel(model_path)

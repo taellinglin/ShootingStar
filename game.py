@@ -16,6 +16,7 @@ from controls import Controls
 from furniture_manager import FurnitureManager
 from bottle_manager import BottleManager
 from bgm import BGMPlayer
+from sfx import SFX
 from physics import BulletPhysics
 class Game(ShowBase):
     def __init__(self):
@@ -40,19 +41,21 @@ class Game(ShowBase):
         self.furniture_manager = FurnitureManager(self.loader, self.render)
         self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world, self, self.camera, self.physics)
         self.bgm_player = BGMPlayer("bgm.wav")
+        self.sfx = SFX(self)
         # Set up player controls
         self.controls = Controls(self)
         self.controls.setup_controls()
 
         # Set up gun mechanics
         self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics)
-
+        
         # Set up update task
         self.taskMgr.add(self.update, "update")
 
         # Set up scene (furniture and bottles)
         self.setup_scene()
-
+        self.model_loader.remove_static_gun()
+        self.model_loader.remove_static_laser()
         # Set up ambient lighting (slow ROYGBIV cycling)
         self.setup_lighting()
 

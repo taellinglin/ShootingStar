@@ -42,7 +42,7 @@ class Controls:
 
         # Attach the camera to the player node
         self.game.camera.reparentTo(self.player_np)
-        self.game.camera.setPos(0, 0, 1.7)
+        self.game.camera.setPos(0, 0, 2)
 
     def set_key(self, key, value):
         """Handle key press events."""

@@ -1,4 +1,4 @@
-from panda3d.core import Vec3, NodePath, BitMask32
+from panda3d.core import Vec3, NodePath, BitMask32, Point3
 from panda3d.bullet import BulletRigidBodyNode, BulletSphereShape, BulletWorld
 
 class Gun:
@@ -132,7 +132,9 @@ class Gun:
                 print(f"[DEBUG] Pellet detected collision with bottle at {bottle_pos}")
                 hit_point = bottle_pos  # If we're directly checking, use the bottle's position
                 self.physics.break_bottle(bottle, hit_point)  # Pass the hit point to break_bottle
-                self.break_sound.play()
+                self.game.sfx.load_sound("bottle_break", "break.wav")
+                self.game.sfx.play_sound("bottle_break", position=Point3(bottle_pos), volume=1.0)
+
 
         # Cleanup: Remove pellets if they travel too far
         if start.length() > 200:  # Arbitrary distance limit
