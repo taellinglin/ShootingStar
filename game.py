@@ -1,3 +1,5 @@
+# Import the necessary modules for audio
+from panda3d.core import AudioManager
 import os
 import random
 import math
@@ -13,7 +15,8 @@ from gun import Gun
 from controls import Controls
 from furniture_manager import FurnitureManager
 from bottle_manager import BottleManager
-
+from bgm import BGMPlayer
+from physics import BulletPhysics
 class Game(ShowBase):
     def __init__(self):
         super().__init__()
@@ -29,20 +32,20 @@ class Game(ShowBase):
         # Initialize Bullet physics world
         self.bullet_world = BulletWorld()
         self.bullet_world.setGravity(Point3(0, 0, -9.81))
-
+        self.physics = BulletPhysics(self.bullet_world, self.render)
         # Load models (town, player, gun)
         self.model_loader = ModelLoader(self.loader, self.render, self.bullet_world, self.camera, fps_mode=True)
 
         # Initialize managers
         self.furniture_manager = FurnitureManager(self.loader, self.render)
-        self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world)
-
+        self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world, self, self.camera, self.physics)
+        self.bgm_player = BGMPlayer("bgm.wav")
         # Set up player controls
         self.controls = Controls(self)
         self.controls.setup_controls()
 
         # Set up gun mechanics
-        self.gun = Gun(self, self.bullet_world, self.bottle_manager)
+        self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics)
 
         # Set up update task
         self.taskMgr.add(self.update, "update")
@@ -57,7 +60,7 @@ class Game(ShowBase):
         # Use the pipe's display information to detect the native resolution.
         display_info = self.pipe.getDisplayInformation()
         modes = display_info.getDisplayModes()
-        
+
         if modes:
             # Assuming the highest resolution mode is the native resolution.
             native_mode = max(modes, key=lambda m: (m.width, m.height))
@@ -76,8 +79,6 @@ class Game(ShowBase):
         wp.setOrigin(0, 0)
         self.win.requestProperties(wp)
 
-
-
     def setup_scene(self):
         # Place furniture from the town model
         self.furniture_manager.place_furniture(self.model_loader.town)
@@ -92,7 +93,7 @@ class Game(ShowBase):
         """Set up a slow cycling ambient light."""
         self.ambient_light = AmbientLight("ambient_light")
         # Initial color; will be smoothly updated via the task
-        self.ambient_light.setColor(LVecBase4f(1, 1, 1, 1))
+        self.ambient_light.setColor(LVecBase4f(1, 1, 1, 0.5))
         self.ambient_light_np = self.render.attachNewNode(self.ambient_light)
         self.render.setLight(self.ambient_light_np)
         # Add a task to animate the ambient light color
@@ -110,6 +111,8 @@ class Game(ShowBase):
         """Update the game state, physics, and controls."""
         dt = globalClock.get_dt()
         self.bullet_world.doPhysics(dt)
+        # Update all bottles
+        self.bottle_manager.update(task)
         self.controls.update(dt)
         return task.cont
 

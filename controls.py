@@ -37,7 +37,7 @@ class Controls:
         self.player_node.setKinematic(True)
 
         self.player_np = self.game.render.attachNewNode(self.player_node)
-        self.player_np.setPos(0, -20, 5)
+        self.player_np.setPos(0, -30, 5)
         self.game.bullet_world.attachRigidBody(self.player_node)
 
         # Attach the camera to the player node

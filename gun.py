@@ -2,7 +2,8 @@ from panda3d.core import Vec3, NodePath, BitMask32
 from panda3d.bullet import BulletRigidBodyNode, BulletSphereShape, BulletWorld
 
 class Gun:
-    def __init__(self, game, bullet_physics, bottle_manager):
+    def __init__(self, game, bullet_physics, bottle_manager, physics):
+        self.physics = physics
         self.game = game
         self.bullet_physics = bullet_physics  # Bullet physics system reference
         self.bottle_manager = bottle_manager  # Reference to BottleManager
@@ -33,15 +34,11 @@ class Gun:
 
         # Create a Bullet physics body for the pellet
         pellet_rb = BulletRigidBodyNode("pellet")
-        pellet_rb.setMass(1.0)
+        pellet_rb.setMass(3.0)
         pellet_rb.setKinematic(False)  # Enable physics-based movement
-        pellet_shape = BulletSphereShape(0.1)
+        pellet_shape = BulletSphereShape(2)
         pellet_rb.addShape(pellet_shape)
-        # In create_pellet method, set the collision mask for the pellet
-        pellet_rb.setIntoCollideMask(BitMask32.bit(1))  # This will make the pellet collide with everything
-
-        # In BottleManager or wherever you create the bottle physics object
-        
+        pellet_rb.setIntoCollideMask(BitMask32.bit(1))  # Pellet collision group
 
         # Attach pellet to the scene
         pellet_rb_np = self.game.render.attachNewNode(pellet_rb)
@@ -49,7 +46,7 @@ class Gun:
 
         # Load pellet model
         pellet_model = self.game.loader.loadModel("models/bullet.bam")
-        pellet_model.setScale(0.8)
+        pellet_model.setScale(1.4)
         pellet_model.reparentTo(pellet_rb_np)
 
         # Position pellet at the gun's fire point
@@ -57,7 +54,7 @@ class Gun:
 
         # Shoot in the forward direction from the fire_dir quaternion
         shoot_direction = self.fire_dir.getQuat(self.game.render).getUp()
-        pellet_speed = 50  # Adjust speed as needed
+        pellet_speed = 512  # Adjust speed as needed
         pellet_rb.setLinearVelocity(shoot_direction * pellet_speed)
 
         print(f"[DEBUG] Pellet spawned at {pellet_rb_np.getPos(self.game.render)} with velocity {pellet_rb.getLinearVelocity()}")
@@ -87,11 +84,10 @@ class Gun:
 
                 print(f"[DEBUG] Collision detected with {hit_phys.getName()} at {hit_position}")
 
-                if hit_phys and hit_phys.getName() == "bottle":
+                if hit_phys and hit_phys.getName() == "Bottle":
                     print(f"[DEBUG] Bottle should break now.")
-                    self.bottle_manager.break_bottle(hit_phys, hit_position)
+                    self.physics.break_bottle(hit_phys)
                     self.break_sound.play()
-
 
         if pellet_np and not pellet_np.isEmpty():
             pellet_np.node().setPythonTag("collision_callback", collision_callback)
@@ -100,13 +96,13 @@ class Gun:
         self.game.task_mgr.add(self.check_collision, "check_pellet_collision", extraArgs=[pellet_rb, pellet_np], appendTask=True)
 
     def check_collision(self, pellet_rb, pellet_np, task):
-        """Checks for collisions between the pellet and objects in the world."""
+        """Checks for collisions between the pellet and all bottles in the world."""
         if not pellet_np or pellet_np.isEmpty():
             return task.done  # Stop task if the pellet has been removed
 
         start = pellet_np.getPos(self.game.render)  # Get pellet's world position
         forward_dir = pellet_np.getQuat(self.game.render).getUp()
-        end = start + forward_dir * 0.1  # Move a small distance forward
+        end = start + forward_dir * 4  # Move a small distance forward
 
         # Perform ray test for collision detection
         result = self.game.bullet_world.rayTestClosest(start, end)
@@ -116,21 +112,27 @@ class Gun:
             hit_name = hit_node.getName() if hit_node else "Unknown"
 
             print(f"[DEBUG] Pellet collision test: Hit detected with {hit_name}")
+
+            # Check if the hit node is a bottle and process accordingly
+            if hit_name == "Bottle":
+                # Get the collision point (Manifold Point)
+                hit_point = result.getHitPoint()  # This gives the world position of the collision
+                print(f"[DEBUG] Bottle detected at {hit_point}")
+                self.physics.break_bottle(hit_node, hit_point)  # Pass the collision point to break_bottle
+                self.break_sound.play()
+
+        # Iterate through all bottles and check for collisions
+        for bottle in self.bottle_manager.get_all_bottles():
+            # You can adjust this to check for a direct collision with each bottle
+            bottle_pos = bottle.node.getPos(self.game.render)  # Assuming 'node' is the NodePath of the bottle
+            distance = (start - bottle_pos).length()
             
-            if hit_name == "pellet":
-                print("[DEBUG] Pellet collided with itself! Ignoring.")
-                return task.cont  # Ignore self-collision, continue checking
-
-            # Trigger collision callback if a valid collision occurs
-            collision_callback = pellet_np.node().getPythonTag("collision_callback")
-            if collision_callback:
-                collision_callback(result)
-
-                # Remove pellet after collision
-                self.game.bullet_world.removeRigidBody(pellet_rb)
-                pellet_np.removeNode()
-                print(f"[DEBUG] Pellet removed after hitting {hit_name}")
-                return task.done  # End task for this pellet
+            # Define a threshold for collision detection (can be adjusted)
+            if distance < 5:  # If the pellet is close enough to the bottle
+                print(f"[DEBUG] Pellet detected collision with bottle at {bottle_pos}")
+                hit_point = bottle_pos  # If we're directly checking, use the bottle's position
+                self.physics.break_bottle(bottle, hit_point)  # Pass the hit point to break_bottle
+                self.break_sound.play()
 
         # Cleanup: Remove pellets if they travel too far
         if start.length() > 200:  # Arbitrary distance limit

@@ -7,9 +7,15 @@ class PlayerPhysics:
         self.bullet_world = bullet_world
         self.is_on_ground = False
         self.velocity = Vec3(0, 0, 0)
+        self.gravity_strength = -9.8  # Gravity strength (adjustable)
+        self.move_speed = 10  # Move speed for the player
+        self.jump_speed = 15  # Jump speed (for future jumping mechanic)
 
         # Setup player collision and physics
         self.setup_player_collision()
+
+        # Set initial position (5 feet above the ground)
+        self.player_model.setPos(0, 0, 1.524)  # 5 feet in meters (approx. 1.524)
 
     def setup_player_collision(self):
         """Creates a capsule collision shape for the player."""
@@ -22,9 +28,9 @@ class PlayerPhysics:
         self.bullet_rigid_body = BulletRigidBodyNode("player_rigid_body")
         self.bullet_rigid_body.addShape(capsule_shape)
         self.bullet_rigid_body.setMass(70)  # Set mass to prevent infinite falling
-        self.bullet_rigid_body.setGravity(Vec3(0, 0, -9.8))  # Apply gravity
-        self.bullet_rigid_body.setLinearFactor(Vec3(1, 1, 0))  # Restrict movement in Z (vertical)
-        
+        self.bullet_rigid_body.setGravity(Vec3(0, 0, self.gravity_strength))  # Apply gravity
+        self.bullet_rigid_body.setLinearFactor(Vec3(1, 1, 1))  # Allow movement in X and Y, but restrict vertical (Z)
+
         # Attach Bullet node to the player model
         self.bullet_node_path = self.player_model.attachNewNode(self.bullet_rigid_body)
         self.bullet_node_path.setPos(self.player_model.getPos())  # Align with player model
@@ -42,23 +48,30 @@ class PlayerPhysics:
 
         self.is_on_ground = ground_check.hasHit()
 
-    def apply_gravity(self, gravity_strength=-9.8):
+    def apply_gravity(self):
         """Applies gravity when the player is in the air."""
         if not self.is_on_ground:
             velocity = self.bullet_rigid_body.getLinearVelocity()
-            velocity.z = max(velocity.z + gravity_strength * globalClock.getDt(), -50)  # Limit fall speed
+            velocity.z = max(velocity.z + self.gravity_strength * globalClock.getDt(), -50)  # Limit fall speed
             self.bullet_rigid_body.setLinearVelocity(velocity)
 
-    def move(self, direction, speed=10):
+    def move(self, direction):
         """Moves the player by applying velocity in the given direction."""
-        velocity = Vec3(direction.x * speed, direction.y * speed, self.bullet_rigid_body.getLinearVelocity().z)
+        velocity = Vec3(direction.x * self.move_speed, direction.y * self.move_speed, self.bullet_rigid_body.getLinearVelocity().z)
         self.bullet_rigid_body.setLinearVelocity(velocity)
+
+    def jump(self):
+        """Makes the player jump if they are on the ground."""
+        if self.is_on_ground:
+            velocity = self.bullet_rigid_body.getLinearVelocity()
+            velocity.z = self.jump_speed  # Apply upward force for jumping
+            self.bullet_rigid_body.setLinearVelocity(velocity)
 
     def update(self):
         """Updates the player's physics state each frame."""
         self.check_if_on_ground()
         self.apply_gravity()
-        
+
         # Debugging output
         if self.is_on_ground:
             print("Player is on the ground!")

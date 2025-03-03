@@ -1,180 +1,135 @@
+from panda3d.core import Vec4, BitMask32, LVecBase4f, LVector3, PointLight
+from panda3d.bullet import BulletRigidBodyNode, BulletConvexHullShape
+from physics import BulletPhysics
+from models import ModelLoader
 import os
 import random
-from panda3d.core import Vec4, BitMask32, LVecBase4f, LVector3, PointLight, Material
-from panda3d.bullet import BulletRigidBodyNode, BulletConvexHullShape
-from panda3d.bullet import BulletRigidBodyNode, BulletConvexHullShape, BulletBoxShape
 
 class BottleManager:
-    def __init__(self, loader, render, bullet_world, scene_scale=1.0):
-        self.loader = loader
+    def __init__(self, model_loader, render, bullet_world, game, camera, physics, scene_scale=1.0):
+        self.model_loader = ModelLoader(model_loader, render, bullet_world, camera)
         self.render = render
-        self.bullet_world = bullet_world  # Bullet world to add the collision
-        self.scene_scale = scene_scale    # Factor to scale offsets, intensity, and radius
+        self.physics = physics
+        self.game = game
+        self.bullet_world = bullet_world
+        self.scene_scale = scene_scale
         self.bottle_path = "models/bottles/"
         
-        # Load all available bottle model filenames from the directory
-        if os.path.exists(self.bottle_path):
-            self.bottle_files = [f for f in os.listdir(self.bottle_path) if f.endswith(".bam")]
-        else:
-            self.bottle_files = []
-            print("Bottle path does not exist!")
+        self.bottle_files = [f for f in os.listdir(self.bottle_path) if f.endswith(".bam")] if os.path.exists(self.bottle_path) else []
+        if not self.bottle_files:
+            print("Bottle path does not exist or contains no models!")
         
-        # Define ROYGBIV colors as RGBA tuples
         self.colors = [
-            (1, 0, 0, 1),       # Red
-            (1, 0.5, 0, 1),     # Orange
-            (1, 1, 0, 1),       # Yellow
-            (0, 1, 0, 1),       # Green
-            (0, 0, 1, 1),       # Blue
-            (0.29, 0, 0.51, 1), # Indigo
-            (0.58, 0, 0.83, 1)  # Violet
+            (1, 0, 0, 1), (1, 0.5, 0, 1), (1, 1, 0, 1),
+            (0, 1, 0, 1), (0, 0, 1, 1), (0.29, 0, 0.51, 1), (0.58, 0, 0.83, 1)
         ]
+        self.bottles = []
 
-    def add_collision_to_bottle(self, bottle, node):
-        """
-        Adds a collision shape to the bottle model and applies Bullet physics to make it fall.
-        """
-        # Get all geometries from the bottle model node
-        geometries = self.get_geometries_from_nodepath(bottle)
-        
-        # If no geometries are found, return
-        if not geometries:
-            print("No geometries found in bottle!")
-            return
+    def add_bottle(self, bottle):
+        """Add a new bottle to the manager."""
+        self.bottles.append(bottle)
 
-        # Create a BulletConvexHullShape for the bottle to handle the collision
-        bottle_shape = BulletConvexHullShape()
+    def get_all_bottles(self):
+        """Return a list of all bottle nodes."""
+        return self.bottles
+    def remove_bottle(self, bottle):
+        self.bottles.remove(bottle)
         
-        # Loop through all geometries and add them to the Bullet shape
-        for geom in geometries:
-            bottle_shape.addGeom(geom)
-
-        # Create a BulletRigidBodyNode for the bottle, enabling physics
-        bottle_rigid_body = BulletRigidBodyNode("Bottle")
-        bottle_rigid_body.addShape(bottle_shape)
-        
-        # Set the bottle as a dynamic object (it can move with physics)
-        bottle_rigid_body.setMass(1.0)  # You can adjust mass for realism
-        bottle_rigid_body.setIntoCollideMask(BitMask32.bit(1))  # Set collision mask for the bottle
-
-        # Attach the BulletRigidBodyNode to the bottle model
-        bottle_collision_node = bottle.attachNewNode(bottle_rigid_body)
-        
-        # Set position and orientation of the collision node to match the bottle's
-        bottle_collision_node.setPos(bottle.getPos())
-        bottle_collision_node.setHpr(bottle.getHpr())
-        
-        # Attach the collision node to the render node
-        bottle_collision_node.reparentTo(self.render)
-        
-        # Add the rigid body node to the Bullet world for physics simulation
-        self.bullet_world.attachRigidBody(bottle_rigid_body)
-        
-        print(f"Added collision shape to bottle {bottle.getName()} and enabled physics.")
-
-    def get_geometries_from_nodepath(self, node_path):
-        """
-        Extracts all geometries from a NodePath if available.
-        """
-        geometries = []
-
-        # Check if the node has a GeomNode
-        geom_node = node_path.findAllMatches('**/+GeomNode')
-        if geom_node.isEmpty():
-            print("No GeomNode found in the NodePath.")
-            return geometries
-        
-        # Extract Geoms from the GeomNode
-        for geom_node_instance in geom_node:
-            geom_node_obj = geom_node_instance.node()  # Get the actual GeomNode object
-            for i in range(geom_node_obj.getNumGeoms()):
-                geom = geom_node_obj.getGeom(i)  # Get the i-th geometry
-                geometries.append(geom)
-                # Print basic information about the geometry
-                print(f"Found Geom with {geom.getPrimitive(0).getNumVertices()} vertices.")
-
-        return geometries
+    def add_collision_to_bottle(self, bottle):
+        """Add collision to a bottle."""
+        # This method will be handled by the Bottle class itself now
 
     def place_bottles_in_model(self, model):
-        """
-        Find all bottle mount nodes in the given model and place a randomly tinted bottle at each mount.
-        Each bottle gets a unique ROYGBIV tint, and is illuminated with a PointLight in the same color.
-        """
+        """Place bottles in the model."""
         bottle_nodes = model.findAllMatches("**/bottle*")
-        if bottle_nodes.isEmpty():
-            print(f"No bottle mount nodes found in {model.getName()}!")
+        if bottle_nodes.isEmpty() or not self.bottle_files:
+            print(f"No bottle mount nodes found in {model.getName()} or no bottles available!")
             return
-
+        
         for node in bottle_nodes:
-            if not self.bottle_files:
-                print("No bottle models available!")
-                return
+            bottle_model = self.model_loader.load_single_model(os.path.join(self.bottle_path, random.choice(self.bottle_files)))
+            bottle_model.reparentTo(self.render)
+            bottle_model.setPos(node.getPos(self.render))
+            bottle_model.setHpr(node.getHpr(self.render))
+            bottle_model.setColorScale(*random.choice(self.colors))
             
-            # Choose a random bottle model file
-            random_bottle_file = random.choice(self.bottle_files)
-            model_path = os.path.join(self.bottle_path, random_bottle_file)
-            bottle = self.loader.loadModel(model_path)
-            bottle.reparentTo(self.render)
-            
-            # Extract and reparent the existing point lights from the bottle (destructible)
-            destructible_node = bottle.find("**/destructible")
-            point_lights = destructible_node.findAllMatches("**/Point*")
-            for light in point_lights:
-                # Reparent existing point lights to bottle
-                light.reparentTo(bottle)
-                # Adjust position of light based on bottle position
-                light.setPos(node.getPos(self.render))
-                print(f"Reparented point light from {light.getName()} to bottle.")
-
-            # Set position and orientation relative to the mount node using world coordinates
-            bottle.setPos(node.getPos(self.render))
-            bottle.setHpr(node.getHpr(self.render))
-            
-            # Choose a random ROYGBIV color for this specific bottle instance
-            color = random.choice(self.colors)
-            bottle.setColorScale(*color)
-            
-            print(f"Placed bottle '{random_bottle_file}' tinted {color} at {node.getPos(self.render)}")
-            
-            # Add collision for the bottle and enable physics
-            self.add_collision_to_bottle(bottle, node)
-            
-            # Illuminate the bottle with a PointLight using the same color
-            self.illuminate_bottle(bottle, color)
-
-    def illuminate_bottle(self, bottle, color):
-        """
-        Creates a PointLight with the given ROYGBIV color and attaches it to the bottle.
-        The light is positioned above and in front of the bottle with offsets scaled for a large scene.
-        The attenuation is adjusted to increase the effective radius.
-        """
-        bottle_light = PointLight("bottle_light")
-        bottle_light.setColor(LVecBase4f(color[0], color[1], color[2], color[3]))
-        
-        # Adjust attenuation values for a large scene.
-        attenuation_constant = 1.0
-        attenuation_linear = 0.05 / self.scene_scale
-        attenuation_quadratic = 0.05 / (self.scene_scale * self.scene_scale)
-        bottle_light.setAttenuation((attenuation_constant, attenuation_linear, attenuation_quadratic))
-        
-        bottle_light_np = bottle.attachNewNode(bottle_light)
-        
-        # Scale the offset based on scene scale.
-        offset = LVector3(0, -3 * self.scene_scale, 3 * self.scene_scale)
-        bottle_light_np.setPos(offset)
-        
-        # Enable the light in the render scene
-        self.render.setLight(bottle_light_np)
-        print(f"Illuminated bottle {bottle.getName()} with light color {color} at offset {offset} and attenuation {(attenuation_constant, attenuation_linear, attenuation_quadratic)}")
+            bottle = Bottle(bottle_model, self.bullet_world, self.game, self, self.scene_scale)
+            self.add_bottle(bottle)
+            self.illuminate_bottle(bottle_model)
+    
+    def illuminate_bottle(self, bottle):
+        color = bottle.getColorScale()
+        light = PointLight("bottle_light")
+        light.setColor(LVecBase4f(*color))
+        light.setAttenuation((1.0, 0.05 / self.scene_scale, 0.05 / (self.scene_scale ** 2)))
+        light_np = bottle.attachNewNode(light)
+        light_np.setPos(LVector3(0, -3 * self.scene_scale, 3 * self.scene_scale))
+        self.render.setLight(light_np)
 
     def place_bottles(self, town_model, furniture_models=None):
-        """
-        Place bottles on bottle mount nodes found in the town model and in each furniture model.
-        """
-        # Place bottles in the town model first.
+        """Place bottles in the given models."""
         self.place_bottles_in_model(town_model)
-
-        # Then, if a list of furniture models is provided, place bottles on each of them.
         if furniture_models:
             for furniture in furniture_models:
                 self.place_bottles_in_model(furniture)
+    
+    def update(self, task):
+        """Update all bottles in the game."""
+        for bottle in self.bottles:
+            bottle.update(task)
+        return task.cont  # Continue checking for updates
+
+class Bottle:
+    def __init__(self, model, bullet_world, game, bottle_manager, scene_scale=1.0):
+        self.model = model  # The model of the bottle
+        self.bullet_world = bullet_world
+        self.game = game
+        self.bottle_manager = bottle_manager
+        self.scene_scale = scene_scale
+        self.node = model  # The actual node for the bottle
+        self.is_broken = False
+        self.node.setName("Bottle")  # Ensure it's named for collision detection
+        
+        # Set up the collision detection for the bottle
+        self.bottle_rb = BulletRigidBodyNode("Bottle")
+        self.bottle_shape = BulletConvexHullShape()
+        for geom in self.bottle_manager.model_loader.get_geometries(self.node):
+            self.bottle_shape.addGeom(geom)
+        self.bottle_rb.addShape(self.bottle_shape)
+        self.bottle_rb.setMass(1.0)
+        self.node.attachNewNode(self.bottle_rb)
+        self.bottle_manager.bullet_world.attachRigidBody(self.bottle_rb)
+
+    def update(self, task):
+        """Continuously check for collisions with the pellet."""
+        if self.is_broken:
+            return task.cont  # No need to check collisions for broken bottles
+
+        # Perform ray test for collision detection
+        start = self.node.getPos(self.game.render)  # Get bottle's world position
+        forward_dir = self.node.getQuat(self.game.render).getUp()  # Pellet's direction
+        end = start + forward_dir * 4  # Move a small distance forward
+
+        result = self.game.bullet_world.rayTestClosest(start, end)
+        
+        if result.hasHit():
+            hit_node = result.getNode()
+            hit_name = hit_node.getName() if hit_node else "Unknown"
+            
+            if hit_name == "Pellet":
+                print(f"[DEBUG] Pellet collision detected with bottle at {hit_node.getPos(self.game.render)}")
+                self.bottle_manager.physics.break_bottle(self.node)  # Call break bottle logic
+                self.is_broken = True  # Mark this bottle as broken
+
+        return task.cont  # Keep the update loop going
+
+    def cleanup(self):
+        """Clean up the bottle by removing it from the scene and physics simulation."""
+        # Detach the bottle's node from the scene graph
+        self.node.detachNode()
+        
+        # Remove the bottle's rigid body from the Bullet physics world
+        self.bullet_world.removeRigidBody(self.bottle_rb)
+        
+        # Optionally delete the bottle object if no longer needed
+        del self

@@ -28,7 +28,7 @@ class ModelLoader:
         # Get player start position
         player_start = self.town.find("**/player_start")
         start_pos = player_start.getPos()
-        print(f"Found Player Starting Point: { start_pos }")
+        print(f"Found Player Starting Point: {start_pos}")
         player_start_pos = player_start.getPos() if not player_start.isEmpty() else Point3(0, 0, 0)
 
         # Load player model
@@ -46,21 +46,26 @@ class ModelLoader:
         self.player.reparentTo(self.player_node_path)
         self.player_node_path.setScale(0.5)
 
-        # Load gun and attach it
+        # Load gun and attach it only if FPS mode is active
         self.gun_mount = self.player.find("**/gun_mount")
         self.gun = self.loader.loadModel("models/gun.bam")
-        if not self.gun_mount.isEmpty():
-            self.gun.reparentTo(self.player_node_path)
-            self.gun.setPos(self.gun_mount.getPos(self.player_node_path))
-            self.gun.setHpr(self.gun_mount.getHpr(self.player_node_path))
-            print("Gun mounted to player physics node.")
-        else:
-            print("Warning: 'gun_mount' not found in player model!")
 
         if self.fps_mode:
-            self.gun.wrtReparentTo(self.camera)
-            taskMgr.add(self.update_gun_position, "update_gun_position")
-            print("Gun mounted to camera for FPS mode.")
+            if not self.gun_mount.isEmpty():
+                self.gun.reparentTo(self.camera)  # Reparent the gun to the camera in FPS mode
+                self.gun.setPos(0.3, 1.4, -0.3)  # Adjust gun's position relative to the camera
+                print("Gun mounted to camera for FPS mode.")
+                taskMgr.add(self.update_gun_position, "update_gun_position")  # Ensure it's updated
+            else:
+                print("Warning: 'gun_mount' not found in player model!")
+        else:
+            if not self.gun_mount.isEmpty():
+                self.gun.reparentTo(self.player_node_path)
+                self.gun.setPos(self.gun_mount.getPos(self.player_node_path))
+                self.gun.setHpr(self.gun_mount.getHpr(self.player_node_path))
+                print("Gun mounted to player physics node.")
+            else:
+                print("Warning: 'gun_mount' not found in player model!")
 
         # Load and attach laser
         self.fire_dir = self.gun.find("**/fire_dir")
@@ -84,8 +89,23 @@ class ModelLoader:
         else:
             print("Warning: 'cat' node not found in town model!")
 
-
     def update_gun_position(self, task):
-        offset = (0.3, 1.4, -0.3)
-        self.gun.setPos(self.camera, *offset)
+        """Update the position of the gun relative to the camera"""
+        if self.fps_mode:
+            offset = (0.3, 1.4, -0.3)
+            self.gun.setPos(self.camera, *offset)  # Set position relative to camera
         return task.cont
+
+    
+    
+    def get_geometries(self, model):
+        """ Extracts all GeomNodes from a given model. """
+        geometries = []
+        for node in model.findAllMatches("**/+GeomNode"):
+            geom_node = node.node()
+            for i in range(geom_node.getNumGeoms()):
+                geometries.append(geom_node.getGeom(i))
+        return geometries
+    def load_single_model(self, model_path):
+        """Load a single model given the path."""
+        return self.loader.loadModel(model_path)
