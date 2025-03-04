@@ -123,3 +123,8 @@ class Controls:
             self.gun_aiming = False
             reset_anim = LerpPosInterval(self.game.model_loader.gun, 0.3, self.original_gun_pos)
             reset_anim.start()
+    def clear_input_state(self):
+        """Reset all input states to False."""
+        for key in self.keys:
+            self.keys[key] = False
+        self.gun_aiming = False  # Reset aiming state

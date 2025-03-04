@@ -4,7 +4,7 @@ from physics import BulletPhysics
 from models import ModelLoader
 import os
 import random
-
+import numpy as np
 class BottleManager:
     def __init__(self, model_loader, render, bullet_world, game, camera, physics, scene_scale=1.0):
         self.model_loader = ModelLoader(model_loader, render, bullet_world, camera)
@@ -99,6 +99,8 @@ class BottleManager:
         return len(self.bottles)
 
 
+from panda3d.core import Point3
+
 class Bottle:
     def __init__(self, model, bullet_world, game, bottle_manager, scene_scale=1.0):
         self.model = model  # The model of the bottle
@@ -110,56 +112,118 @@ class Bottle:
         self.is_broken = False
         self.node.setName("Bottle")  # Ensure it's named for collision detection
         self.destroyed = False
-        # Set up the collision detection for the bottle
+        self.on_ribbon = False
+        # Set up the collision detection for the bottle.
         self.bottle_rb = BulletRigidBodyNode("Bottle")
         self.bottle_shape = BulletConvexHullShape()
         for geom in self.bottle_manager.model_loader.get_geometries(self.node):
             self.bottle_shape.addGeom(geom)
         self.bottle_rb.addShape(self.bottle_shape)
         self.bottle_rb.setMass(1.0)
-        self.node.attachNewNode(self.bottle_rb)
-        self.bottle_manager.bullet_world.attachRigidBody(self.bottle_rb)
+        
+        # Attach the rigid body once during initialization.
+        self.rb_node_path = self.node.attachNewNode(self.bottle_rb)
+        self.bullet_world.attachRigidBody(self.bottle_rb)
 
     def update(self, task):
         if self.destroyed:
-            self.bottle_manager.remove_bottle(self)  # Ensure it's removed from active bottles
+            self.bottle_manager.remove_bottle(self)  # Remove from active bottles
             return task.done  # Stop updating this bottle
 
         if self.node.isEmpty():
             print("[ERROR] Bottle node is empty, skipping update")
             return task.done
-        if not self.node.isEmpty():
-            self.bullet_world.attachRigidBody(self.bottle_rb)
-        else:
-            print("[ERROR] Bottle node is empty, skipping physics attachment")
 
-        # Perform ray test for collision detection
-        start = self.node.getPos(self.game.render)  # Get bottle's world position
-        forward_dir = self.node.getQuat(self.game.render).getUp()  # Pellet's direction
-        end = start + forward_dir * 4  # Move a small distance forward
+        # Perform ray test for collision detection.
+        start = self.node.getPos(self.game.render)  # Bottle's world position.
+        forward_dir = self.node.getQuat(self.game.render).getUp()  # Assuming pellet's direction.
+        end = start + forward_dir * 4  # Ray endpoint.
 
         result = self.game.bullet_world.rayTestClosest(start, end)
-        
         if result.hasHit():
             hit_node = result.getNode()
             hit_name = hit_node.getName() if hit_node else "Unknown"
-            
             if hit_name == "Pellet":
                 print(f"[DEBUG] Pellet collision detected with bottle at {hit_node.getPos(self.game.render)}")
-                self.bottle_manager.physics.break_bottle(self.node)  # Call break bottle logic
-                self.is_broken = True  # Mark this bottle as broken
+                self.bottle_manager.physics.break_bottle(self.node)  # Trigger break logic.
+                self.is_broken = True  # Mark as broken.
                 self.destroyed = True
 
-        return task.cont  # Keep the update loop going
+            current_pos = self.getPos()
+    
+            # Ensure current_pos is a valid position
+            if current_pos is None:
+                print("[ERROR] Invalid position for bottle. Skipping update.")
+                return task.cont
+            
+            for i, bottle in enumerate(self.bottle_manager.bottles):  # Assuming self.bottles is a list of bottle objects
+                current_pos = bottle.getPos()
+                
+                # Ensure current_pos is a valid position
+                if current_pos is None:
+                    print("[ERROR] Invalid position for bottle. Skipping update.")
+                    continue  # Skip this bottle if its position is invalid
+                if self.on_ribbon:
+                    current_pos = self.getPos()  # Get the current position of the bottle
+                
+                    if not isinstance(current_pos, (tuple, Point3)) or len(current_pos) != 3:
+                        print(f"[ERROR] Invalid position: {current_pos}")
+                        return  # Exit if current_pos is invalid
+
+                    # Perform sway along X
+                    sway_x = np.sin(task.time * 0.5) * 0.2
+                    self.setX(current_pos[0] + sway_x)  # Move the bottle on X
+
+                    # Optionally, sway along Y or Z as well
+                    sway_y = np.cos(task.time * 0.5) * 0.2
+                    self.setY(current_pos[1] + sway_y)  # Move the bottle on Y
+                        
+            return task.cont
+    def destroy_bottle(self, bottle):
+        """Destroy the bottle and prevent it from being updated."""
+        self.node.removeNode()  # Removes the node from the scene graph
+        self.node = None  # Set the node to None to prevent further updates
 
     def cleanup(self):
         """Clean up the bottle by removing it from the scene and physics simulation."""
-        # Detach the bottle's node from the scene graph
         self.node.detachNode()
-        
-        # Remove the bottle's rigid body from the Bullet physics world
         self.bullet_world.removeRigidBody(self.bottle_rb)
-        
-        # Optionally delete the bottle object if no longer needed
         del self
-    
+
+    def setPos(self, pos):
+        """Set the position of the bottle. `pos` should be a Point3 or tuple of 3 floats."""
+        if self.node is None or self.node.isEmpty():
+            print("[ERROR] The node is empty or not initialized. Cannot set position.")
+            return  # Exit early to avoid further errors
+        
+        if isinstance(pos, (Point3, tuple)) and len(pos) == 3:
+            self.node.setPos(*pos)  # Unpack tuple and set position
+        else:
+            print("[ERROR] Invalid position passed to setPos. Expected a Point3 or a tuple of 3 values.")
+
+
+    def setX(self, x):
+        """Set the X position of the bottle."""
+        current_pos = self.getPos()  # Pass the node to getPos
+        self.setPos((x, current_pos[1], current_pos[2]))
+
+    def setY(self, y):
+        """Set the Y position of the bottle."""
+        current_pos = self.getPos()  # Pass the node to getPos
+        self.setPos((current_pos[0], y, current_pos[2]))
+
+    def setZ(self, z):
+        """Set the Z position of the bottle."""
+        if self.node.isEmpty():
+            print("[ERROR] Bottle node is empty, skipping setZ")
+            return
+        current_pos = self.getPos()  # Pass the node to getPos
+        self.node.setPos(current_pos[0], current_pos[1], z)
+
+    def getPos(self):
+        """Get the position of the node."""
+        if self.node.isEmpty():
+            print("[ERROR] Bottle node is empty, returning default position.")
+            return (0, 0, 0)  # Default position when the node is empty
+        pos = self.node.getPos(self.game.render)
+        return pos

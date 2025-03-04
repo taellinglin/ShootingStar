@@ -31,7 +31,7 @@ class Gun:
         self.hud.update_ammo(-1)
         # Create a Bullet physics body for the pellet
         pellet_rb = BulletRigidBodyNode("pellet")
-        pellet_rb.setMass(3.0)
+        pellet_rb.setMass(1.0)
         pellet_rb.setKinematic(False)  # Enable physics-based movement
         pellet_shape = BulletSphereShape(2)
         pellet_rb.addShape(pellet_shape)
@@ -51,7 +51,7 @@ class Gun:
 
         # Shoot in the forward direction from the fire_dir quaternion
         shoot_direction = self.fire_dir.getQuat(self.game.render).getUp()
-        pellet_speed = 512  # Adjust speed as needed
+        pellet_speed = 256  # Adjust speed as needed
         pellet_rb.setLinearVelocity(shoot_direction * pellet_speed)
 
         print(f"[DEBUG] Pellet spawned at {pellet_rb_np.getPos(self.game.render)} with velocity {pellet_rb.getLinearVelocity()}")
@@ -148,7 +148,7 @@ class Gun:
                 print(f"[DEBUG] Bottle at {bottle_pos} has been removed from the scene graph.")
 
         # Cleanup: Remove pellets if they travel too far
-        if start.length() > 200:  # Arbitrary distance limit
+        if start.length() > 2000:  # Arbitrary distance limit
             self.game.bullet_world.removeRigidBody(pellet_rb)
             pellet_np.removeNode()
             print("[DEBUG] Pellet removed after exceeding distance limit.")

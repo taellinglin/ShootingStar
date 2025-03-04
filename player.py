@@ -1,5 +1,5 @@
 from panda3d.core import BitMask32, Vec3
-from panda3d.bullet import BulletCapsuleShape, BulletRigidBodyNode
+from panda3d.bullet import BulletCapsuleShape, BulletRigidBodyNode, ZUp
 
 class PlayerPhysics:
     def __init__(self, player_model, bullet_world):
@@ -12,32 +12,10 @@ class PlayerPhysics:
         self.jump_speed = 15  # Jump speed (for future jumping mechanic)
 
         # Setup player collision and physics
-        self.setup_player_collision()
+        self.setup_player_physics()
 
         # Set initial position (5 feet above the ground)
-        self.player_model.setPos(0, 0, 1.524)  # 5 feet in meters (approx. 1.524)
-
-    def setup_player_collision(self):
-        """Creates a capsule collision shape for the player."""
-        # Define capsule shape parameters
-        collision_radius = 0.5  # Adjust based on model size
-        collision_height = 1.5  # Adjust based on model height
-        capsule_shape = BulletCapsuleShape(collision_radius, collision_height)
-
-        # Create Bullet rigid body node
-        self.bullet_rigid_body = BulletRigidBodyNode("player_rigid_body")
-        self.bullet_rigid_body.addShape(capsule_shape)
-        self.bullet_rigid_body.setMass(70)  # Set mass to prevent infinite falling
-        self.bullet_rigid_body.setGravity(Vec3(0, 0, self.gravity_strength))  # Apply gravity
-        self.bullet_rigid_body.setLinearFactor(Vec3(1, 1, 1))  # Allow movement in X and Y, but restrict vertical (Z)
-
-        # Attach Bullet node to the player model
-        self.bullet_node_path = self.player_model.attachNewNode(self.bullet_rigid_body)
-        self.bullet_node_path.setPos(self.player_model.getPos())  # Align with player model
-        self.bullet_node_path.setCollideMask(BitMask32.bit(1))  # Set collision mask
-
-        # Attach the rigid body to the physics world
-        self.bullet_world.attachRigidBody(self.bullet_rigid_body)
+        self.bullet_node_path.setPos(0, 0, 1.524 * 2)
 
     def check_if_on_ground(self):
         """Uses a ray test to check if the player is standing on the ground."""
@@ -77,3 +55,42 @@ class PlayerPhysics:
             print("Player is on the ground!")
         else:
             print("Player is in the air!")
+
+    def reset(self, position=Vec3(0, 0, 1.524)):
+        """Resets the player's position and velocity."""
+        self.bullet_rigid_body.setLinearVelocity(Vec3(0, 0, 0))  # Stop movement
+        self.bullet_rigid_body.setAngularVelocity(Vec3(0, 0, 0))  # Reset rotation velocity
+        self.bullet_node_path.setPos(position)  # Reset position
+        self.bullet_rigid_body.clearForces()  # Remove any applied forces
+        
+        # Restore physics properties
+        self.restore_physics()
+
+    def restore_physics(self):
+        """Restores the player's physics properties after a reset."""
+        if self.bullet_rigid_body not in self.bullet_world.getRigidBodies():
+            self.bullet_world.attachRigidBody(self.bullet_rigid_body)
+
+        # Reapply physics settings
+        self.bullet_rigid_body.setAngularFactor(Vec3(1, 1, 1))  # Ensure full rotation is enabled
+        self.bullet_rigid_body.setLinearVelocity(Vec3(0, 0, 0))
+        self.bullet_rigid_body.setAngularVelocity(Vec3(0, 0, 0))
+        #self.bullet_rigid_body.setDamping(0.05, 0.05)  # Reset damping for realistic movement
+
+        print("Player physics restored!")
+
+    def setup_player_physics(self):
+        """Setup player physics with a capsule collision shape representing a 5-foot-tall player."""
+        total_height_meters = 1.524  # 5 feet in meters
+        radius = 0.3  # Adjust the radius as needed
+        cylinder_height = total_height_meters - 2 * radius
+
+        player_shape = BulletCapsuleShape(radius, cylinder_height, ZUp)
+        self.bullet_rigid_body = BulletRigidBodyNode('player')  # Store in self
+        self.bullet_rigid_body.addShape(player_shape)
+
+        self.bullet_node_path = base.render.attachNewNode(self.bullet_rigid_body)  # Store in self
+        self.bullet_world.attachRigidBody(self.bullet_rigid_body)
+
+        # Reparent the player model to the physics node
+        self.player_model.reparentTo(self.bullet_node_path)

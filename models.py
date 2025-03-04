@@ -3,7 +3,7 @@ from panda3d.bullet import BulletWorld, BulletRigidBodyNode, BulletBoxShape, Bul
 import os
 import random
 from direct.task.TaskManagerGlobal import taskMgr
-
+from player import PlayerPhysics
 class ModelLoader:
     def __init__(self, loader, render, bullet_world, camera, fps_mode=False):
         self.loader = loader
@@ -12,6 +12,7 @@ class ModelLoader:
         self.camera = camera
         self.fps_mode = fps_mode
         self.load_models()
+        self.player_physics = PlayerPhysics(self.player, bullet_world)
     def reload_models(self):
         """ Reloads all models by first removing existing ones and then reloading them. """
         # Remove previous models
@@ -21,8 +22,6 @@ class ModelLoader:
             self.player.removeNode()
         if self.player_rigid_node:
             self.bullet_world.removeRigidBody(self.player_rigid_node)
-        if self.town:
-            self.bullet_world.removeRigidBody(self.town)
 
         # Clear references
         self.town = None
@@ -31,6 +30,11 @@ class ModelLoader:
 
         # Re-run load_models
         self.load_models()
+
+        # Ensure player physics is properly restored
+        if self.player_physics:
+            self.player_physics.restore_physics()
+
 
     def load_models(self):
         # Load town model

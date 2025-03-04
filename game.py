@@ -4,8 +4,8 @@ import os
 import random
 import math
 import colorsys
-
-from panda3d.core import Point3, WindowProperties, AmbientLight, LVecBase4f, LVecBase3f
+import numpy as np
+from panda3d.core import Point3, WindowProperties, AmbientLight, LVecBase4f, LVecBase3f, LVector3, LPoint3f, TextureAttrib
 from panda3d.bullet import BulletWorld
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
@@ -14,7 +14,7 @@ from models import ModelLoader
 from gun import Gun
 from controls import Controls
 from furniture_manager import FurnitureManager
-from bottle_manager import BottleManager
+from bottle_manager import BottleManager, Bottle
 from bgm import BGMPlayer
 from sfx import SFX
 from physics import BulletPhysics
@@ -36,18 +36,19 @@ class Game(ShowBase):
         # Initialize Bullet physics world
         self.bullet_world = BulletWorld()
         self.bullet_world.setGravity(Point3(0, 0, -9.81))
+        
+        # Physics
         self.physics = BulletPhysics(self.bullet_world, self.render)
 
-        # Load models (town, player, gun)
+        # Models
         self.model_loader = ModelLoader(self.loader, self.render, self.bullet_world, self.camera, fps_mode=True)
 
-        # Initialize managers
+        # Factories, BGM/SFX, HUD
         self.furniture_manager = FurnitureManager(self.loader, self.render)
         self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world, self, self.camera, self.physics)
         self.bgm_player = BGMPlayer("bgm.ogg")
         self.sfx = SFX(self)
         self.hud = HUD(self, self.bottle_manager)
-        self.player_physics = PlayerPhysics(self.model_loader.player, self.bullet_world)
 
         # Set up gun mechanics
         self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics, self.hud)
@@ -55,7 +56,7 @@ class Game(ShowBase):
         # Set up player controls
         self.controls = Controls(self, self.gun, self.model_loader.player)
         self.controls.setup_controls()
-
+        
         # Set up update task
         self.taskMgr.add(self.update, "update")
 
@@ -100,6 +101,89 @@ class Game(ShowBase):
         wp.setOrigin(0, 0)
         self.win.requestProperties(wp)
 
+    def bezier_curve(self, p0, p1, p2, p3, num_points=10, scale_factor=10):
+        """Generate points along a scaled cubic Bezier curve."""
+        points = []
+        for t in np.linspace(0, 1, num_points):
+            b_t = (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3
+            # Scale the points by the scale factor
+            b_t_scaled = b_t * scale_factor
+            points.append(b_t_scaled)
+        return points
+
+    def place_bottles_on_curve(self, bottle_manager, curve_points, num_bottles):
+        """Distribute bottles along the given Bezier curve points."""
+        step = len(curve_points) // num_bottles
+        bottles = []
+
+        for i in range(num_bottles):
+            pos = curve_points[i * step]  # Get position from curve
+
+            # Ensure pos is LPoint3f
+            if not isinstance(pos, LPoint3f):
+                pos = LPoint3f(*pos)  # Convert pos to LPoint3f if it's a list or tuple
+
+            # Load bottle model and assign it to the scene
+            bottle_model = base.loader.loadModel(os.path.join("models", "bottles", random.choice(bottle_manager.bottle_files)))
+            bottle_model.reparentTo(bottle_manager.render)
+            bottle_model.setPos(pos)  # Set the initial position
+
+            # Iterate through each geometry in the model
+            for node in bottle_model.findAllMatches('**/+GeomNode'):
+                geom_node = node.node()
+                for i in range(geom_node.getNumGeoms()):
+                    state = geom_node.getGeomState(i)
+                    
+                    # Get texture attribute from the state
+                    tex_attrib = state.getAttrib(TextureAttrib)
+                    
+                    if tex_attrib:
+                        tex = tex_attrib.getTexture()
+                        if tex:
+                            print("Texture applied:", tex)
+                        else:
+                            print("No texture applied to this geometry.")
+                    else:
+                        print("No texture attribute found.")
+
+            # Apply random color to the bottle
+            bottle_model.setColorScale(*random.choice(bottle_manager.colors))
+
+            # Create bottle object and add it to bottle_manager
+            bottle = Bottle(bottle_model, bottle_manager.bullet_world, bottle_manager.game, bottle_manager, bottle_manager.scene_scale)
+            bottle_manager.add_bottle(bottle)
+            self.hud.update_bottles_total(1)
+            bottles.append(bottle)
+
+
+        return bottles
+
+    def animate_bottles_along_curve(self, bottles, curve_points, speed=0.25):
+        """Move bottles along the given Bezier curve in an endless loop like a floating kite tail."""
+        def update(task):
+            t = (task.time * speed) % 1  # Normalize time to loop between 0 and 1
+            index = int(t * (len(curve_points) - 1))  # Get index for current position on curve
+
+            for i, bottle in enumerate(bottles):
+                # Offset for ribbon effect: Slight delay to give a trailing effect
+                offset = (i * 10) % len(curve_points)
+                pos = curve_points[(index + offset) % len(curve_points)]  # Update position along curve
+
+                # Optional: Add a slight oscillation to Z position to simulate floating
+                bottle.setPos(pos)
+                bottle.on_ribbon = True
+                bottle.setZ(pos[2] + np.sin(task.time * 2 + i) * 0.2)  # Slight "floating" effect
+
+                # Optional: Add a little sway or movement along the X or Y axis
+                current_pos = bottle.getPos()  # Get the current position of the bottle
+                bottle.setX(current_pos[0] + np.sin(task.time * 0.5 + i) * 0.2)  # Sway along X
+                bottle.setY(current_pos[1] + np.cos(task.time * 0.5 + i) * 0.2)  # Sway along Y
+
+            return task.cont
+
+        return update
+
+
     def setup_scene(self):
         # Place furniture from the town model
         self.furniture_manager.place_furniture(self.model_loader.town)
@@ -109,14 +193,27 @@ class Game(ShowBase):
 
         # Place bottles on the town model and on each furniture model
         self.bottle_manager.place_bottles(self.model_loader.town, furniture_objects)
+        # Define 4 control points for a looped Bezier path
+        p0, p1, p2, p3 = LVector3(0, 0, 5), LVector3(5, 10, 7), LVector3(-5, 15, 3), LVector3(0, 20, 5)
+        curve_points = self.bezier_curve(p0, p1, p2, p3, num_points=20)
+
+        # Create a strand of 10 bottles moving in a ribbon loop
+        bottles = self.place_bottles_on_curve(self.bottle_manager, curve_points, num_bottles=8)
+
+        # Add animation task
+        self.bottle_manager.game.taskMgr.add(self.animate_bottles_along_curve(bottles, curve_points))
+
+        
 
     def reset_scene(self):
         """Reset the scene by clearing and reloading all dynamic objects."""
-        # Remove existing objects
+
+        # Remove existing objects properly
         self.furniture_manager.clear_furniture()
         self.bottle_manager.clear_bottles()
 
-        # Reset physics world
+        # Remove old physics world entirely and replace it with a fresh one
+        del self.bullet_world
         self.bullet_world = BulletWorld()
         self.bullet_world.setGravity(Point3(0, 0, -9.81))
         self.physics = BulletPhysics(self.bullet_world, self.render)
@@ -125,25 +222,37 @@ class Game(ShowBase):
         self.model_loader.reload_models()
 
         # Reset managers
+        del self.furniture_manager
+        del self.bottle_manager
         self.furniture_manager = FurnitureManager(self.loader, self.render)
         self.bottle_manager = BottleManager(self.loader, self.render, self.bullet_world, self, self.camera, self.physics)
 
-        # Reinitialize player physics
-        self.player_physics = PlayerPhysics(self.model_loader.player, self.bullet_world)
-        
+        self.model_loader.player.setHpr(0, 0, 0)  # Ensure player rotation is reset
+        self.model_loader.player.setPos(0, 0, 2)  # Reset player position
+
+        # Clear previous input state
+        self.controls.clear_input_state()
+
+        # Reinitialize the gun
+        del self.gun
+        self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics, self.hud)
+
         # Reset HUD
         self.hud.reset()
-        
-        # Reinitialize the gun
-        self.gun = Gun(self, self.bullet_world, self.bottle_manager, self.physics, self.hud)
-        
-        # Reset controls
+
+        # Reset controls properly
+        del self.controls
         self.controls = Controls(self, self.gun, self.model_loader.player)
         self.controls.setup_controls()
-        
+
+        # Remove all tasks to ensure old states are gone
+        self.taskMgr.remove("update")
+        self.taskMgr.add(self.update, "update")
+
         # Reload scene
         self.setup_scene()
         print("Scene reset successfully!")
+
 
     def setup_lighting(self):
         """Set up a slow cycling ambient light."""
